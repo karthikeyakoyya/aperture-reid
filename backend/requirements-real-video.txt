@@ -1,0 +1,5 @@
+# Install these ON TOP of requirements.txt only if you want to run
+# vision_pipeline.py against real video files instead of the built-in
+# synthetic demo. Kept separate so the default demo stays lightweight.
+ultralytics>=8.2
+opencv-python>=4.9

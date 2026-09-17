@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aperture: cross-camera identity resolution</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:            #10140F;
+    --panel:         #1A211A;
+    --panel-raised:  #202920;
+    --line:          #2E3A2C;
+    --text:          #EDEBE1;
+    --text-muted:    #8A9284;
+    --brass:         #C4863B;
+    --brass-soft:    rgba(196,134,59,0.18);
+    --teal:          #5FA89A;
+    --ember:         #D6572E;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(95,168,154,0.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(196,134,59,0.06), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Schibsted Grotesk', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  .wrap{ max-width: 1120px; margin: 0 auto; padding: 48px 28px 80px; }
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 22px; margin-bottom: 34px;
+    gap: 20px; flex-wrap: wrap;
+  }
+  h1{
+    font-family:'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 3.1rem;
+    letter-spacing: -0.005em;
+    margin: 0 0 8px 0;
+    color: var(--text);
+  }
+  header p{
+    margin:0; color: var(--text-muted); font-size: 0.98rem; max-width: 46ch;
+    font-style: italic;
+    font-family: 'Instrument Serif', serif;
+    font-optical-sizing: auto;
+  }
+  .controls{ display:flex; align-items:center; gap: 14px; }
+  .status-pill{
+    display:flex; align-items:center; gap: 8px;
+    font-family:'Fragment Mono', monospace; font-size: 0.78rem; color: var(--text-muted);
+    border: 1px solid var(--line); padding: 7px 12px; border-radius: 100px;
+    background: var(--panel);
+  }
+  .status-dot{
+    width:7px; height:7px; border-radius:50%; background: var(--teal);
+    box-shadow: 0 0 0 0 rgba(95,168,154,0.6);
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+  @keyframes breathe{
+    0%,100%{ box-shadow: 0 0 0 0 rgba(95,168,154,0.45); }
+    50%{ box-shadow: 0 0 0 6px rgba(95,168,154,0); }
+  }
+  button.reset{
+    font-family:'Fragment Mono', monospace; font-size: 0.78rem;
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--line); padding: 8px 14px; border-radius: 100px;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  button.reset:hover{ border-color: var(--brass); color: var(--brass); }
+
+  /* ---------- camera stage ---------- */
+  .stage{
+    position: relative;
+    display:grid; grid-template-columns: 1fr 1fr; gap: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: visible;
+    margin-bottom: 8px;
+  }
+  .cam-panel{ position:relative; padding: 16px 16px 14px; }
+  .cam-panel + .cam-panel{ border-left: 1px solid var(--line); }
+  .cam-label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-bottom: 10px;
+  }
+  .cam-label .name{ font-size:0.82rem; letter-spacing:0.02em; color: var(--text); font-weight:500; }
+  .cam-label .range{ font-family:'Fragment Mono', monospace; font-size:0.7rem; color: var(--text-muted); }
+  canvas.cam-canvas{
+    width: 100%; height: 230px; display:block;
+    background: #0C0F0B;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+  }
+  #threadOverlay{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    pointer-events:none;
+  }
+
+  /* ---------- ledger ---------- */
+  .ledger{
+    border: 1px solid var(--line); border-top:none;
+    background: var(--panel-raised);
+    border-radius: 0 0 4px 4px;
+    padding: 4px 0 4px;
+    max-height: 168px; overflow-y: auto;
+  }
+  .ledger-row{
+    display:grid; grid-template-columns: 92px 20px 1fr 60px 74px;
+    align-items:center; gap: 10px;
+    padding: 7px 18px; font-family:'Fragment Mono', monospace; font-size: 0.74rem;
+    color: var(--text-muted); border-bottom: 1px dashed rgba(46,58,44,0.6);
+  }
+  .ledger-row:last-child{ border-bottom:none; }
+  .ledger-row .swatch{ width:11px; height:11px; border-radius:2px; }
+  .ledger-row .arrow{ color: var(--text-muted); }
+  .ledger-row .desc{ color: var(--text); font-family:'Schibsted Grotesk', sans-serif; font-size: 0.78rem; }
+  .ledger-row .score{ color: var(--brass); text-align:right; }
+  .ledger-empty{ padding: 22px 18px; color: var(--text-muted); font-size: 0.85rem; font-style: italic; font-family:'Instrument Serif', serif; }
+
+  /* ---------- section headers ---------- */
+  .section-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin: 46px 0 14px;
+  }
+  .section-head h2{
+    font-family:'Instrument Serif', serif; font-weight:400; font-size: 1.5rem; margin:0;
+  }
+  .section-head span{ color: var(--text-muted); font-size: 0.82rem; font-family:'Fragment Mono', monospace; }
+
+  /* ---------- heatmap ---------- */
+  .heatmap-wrap{
+    border: 1px solid var(--line); border-radius: 4px; background: var(--panel);
+    padding: 18px;
+  }
+  canvas#heatmapCanvas{ width:100%; height: 260px; display:block; border-radius:2px; }
+  .heatmap-legend{ display:flex; align-items:center; gap:10px; margin-top:12px; }
+  .legend-bar{ height:8px; flex:1; border-radius:4px;
+    background: linear-gradient(90deg, rgba(44,74,68,0.15), #5FA89A 35%, #D6572E 100%); }
+  .legend-labels{ display:flex; justify-content:space-between; font-family:'Fragment Mono', monospace; font-size:0.68rem; color: var(--text-muted); }
+
+  /* ---------- footer note ---------- */
+  .note{
+    margin-top: 54px; padding-top: 22px; border-top: 1px solid var(--line);
+    color: var(--text-muted); font-size: 0.88rem; line-height:1.6; max-width: 74ch;
+  }
+  .note strong{ color: var(--text); font-weight:500; }
+  .note a{ color: var(--teal); text-decoration:none; border-bottom: 1px dotted var(--teal); }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--line); border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Aperture</h1>
+      <p>Two cameras, one corridor. When someone leaves Camera A's view and enters Camera B's, this resolves whether they're a returning face or a new one, judging by appearance alone, not a shared badge.</p>
+    </div>
+    <div class="controls">
+      <div class="status-pill"><span class="status-dot"></span><span id="statusText">connecting…</span></div>
+      <button class="reset" id="resetBtn">reset simulation</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="cam-panel">
+      <div class="cam-label"><span class="name">Camera A</span><span class="range">frames x 0.00 to 0.62</span></div>
+      <canvas class="cam-canvas" id="camA" width="520" height="230"></canvas>
+    </div>
+    <div class="cam-panel">
+      <div class="cam-label"><span class="name">Camera B</span><span class="range">frames x 0.38 to 1.00</span></div>
+      <canvas class="cam-canvas" id="camB" width="520" height="230"></canvas>
+    </div>
+    <svg id="threadOverlay"></svg>
+  </div>
+  <div class="ledger" id="ledger">
+    <div class="ledger-empty">Resolution ledger: matches will appear here as people cross the handoff zone.</div>
+  </div>
+
+  <div class="section-head">
+    <h2>Loitering alerts</h2>
+    <span id="anomalyCount">0 flagged</span>
+  </div>
+  <div class="ledger" id="anomalyLedger">
+    <div class="ledger-empty">No alerts yet: flags when a resolved identity stays in view continuously past the dwell threshold.</div>
+  </div>
+
+  <div class="section-head">
+    <h2>Merged floor-plan footfall</h2>
+    <span id="footfallCount">0 events</span>
+  </div>
+  <div class="heatmap-wrap">
+    <canvas id="heatmapCanvas" width="1000" height="260"></canvas>
+    <div class="heatmap-legend">
+      <div class="legend-bar"></div>
+    </div>
+    <div class="legend-labels"><span>quiet</span><span>well trodden</span></div>
+  </div>
+
+  <div class="note">
+    <strong>What's actually happening:</strong> each camera runs its own independent tracker with its own local ID space. Camera A's "person #4" means nothing to Camera B. Aperture's re-ID engine compares an HSV color-histogram descriptor of each person's appearance across cameras, inside a short time window, and accepts a match once the similarity clears a threshold. This demo runs on a synthetic two-camera corridor so it's fully self-contained; point <code>vision_pipeline.py</code> at two real video files (YOLOv8 + ByteTrack under the hood) to run the identical matching logic on real footage. See <code>README.md</code> for the honest limitations of color-histogram matching versus a learned re-ID embedding, and what a v2 would add.
+  </div>
+
+</div>
+
+<script>
+const WS_URL = "ws://localhost:8000/ws/live";
+const REST_BASE = "http://localhost:8000";
+
+const camACanvas = document.getElementById('camA');
+const camBCanvas = document.getElementById('camB');
+const ctxA = camACanvas.getContext('2d');
+const ctxB = camBCanvas.getContext('2d');
+const heatCanvas = document.getElementById('heatmapCanvas');
+const heatCtx = heatCanvas.getContext('2d');
+const statusText = document.getElementById('statusText');
+const ledger = document.getElementById('ledger');
+const footfallCount = document.getElementById('footfallCount');
+const anomalyLedger = document.getElementById('anomalyLedger');
+const anomalyCount = document.getElementById('anomalyCount');
+let totalAnomalies = 0;
+
+const CAM_A_RANGE = [0.0, 0.62];
+const CAM_B_RANGE = [0.38, 1.0];
+
+function rgb(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
+
+function drawCorridorFloor(ctx, w, h){
+  ctx.fillStyle = '#0C0F0B';
+  ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = 'rgba(138,146,132,0.14)';
+  ctx.lineWidth = 1;
+  for(let i=1;i<6;i++){
+    const y = (h/6)*i;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+}
+
+function drawCamera(ctx, canvas, positions, range){
+  const w = canvas.width, h = canvas.height;
+  drawCorridorFloor(ctx, w, h);
+  const span = range[1]-range[0];
+  positions.forEach(p=>{
+    if(p.x < range[0]-0.03 || p.x > range[1]+0.03) return;
+    const localX = (p.x - range[0]) / span;
+    const px = localX * w;
+    const py = p.y * h;
+    // person as a soft capsule "figure" rather than a bare dot
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.fillStyle = rgb(p.color);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 9, 13, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function heatColor(v){
+  // teal (low) -> ember (high), through the panel background at v=0
+  if(v <= 0) return null;
+  const t = Math.min(1, v);
+  const c1 = [32,41,32], c2 = [95,168,154], c3 = [214,87,46];
+  let r,g,b;
+  if(t < 0.5){
+    const k = t/0.5;
+    r = c1[0]+(c2[0]-c1[0])*k; g = c1[1]+(c2[1]-c1[1])*k; b = c1[2]+(c2[2]-c1[2])*k;
+  } else {
+    const k = (t-0.5)/0.5;
+    r = c2[0]+(c3[0]-c2[0])*k; g = c2[1]+(c3[1]-c2[1])*k; b = c2[2]+(c3[2]-c2[2])*k;
+  }
+  return `rgb(${r|0},${g|0},${b|0})`;
+}
+
+function drawHeatmap(grid){
+  const w = heatCanvas.width, h = heatCanvas.height;
+  heatCtx.fillStyle = '#141B14';
+  heatCtx.fillRect(0,0,w,h);
+  const rows = grid.length, cols = grid[0]?.length || 0;
+  if(!cols) return;
+  const cw = w/cols, ch = h/rows;
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      const v = grid[y][x];
+      const col = heatColor(v);
+      if(!col) continue;
+      heatCtx.fillStyle = col;
+      heatCtx.fillRect(x*cw, y*ch, cw+1, ch+1);
+    }
+  }
+}
+
+function updateLedger(matches){
+  if(!matches.length) return;
+  ledger.innerHTML = '';
+  matches.slice().reverse().forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.innerHTML = `
+      <span>${m.global_id}</span>
+      <span class="swatch" style="background:${rgb(m.color)}"></span>
+      <span class="desc">${m.camera_from} → ${m.camera_to}, matched by appearance</span>
+      <span class="arrow">⤳</span>
+      <span class="score">${(m.score*100).toFixed(0)}%</span>
+    `;
+    ledger.appendChild(row);
+  });
+}
+
+function addAnomalyRows(anomalies){
+  // the backend only ever sends the anomalies newly raised THIS tick
+  // (not a full snapshot), so this appends rather than replacing --
+  // unlike the resolution ledger above, which gets a fresh full list
+  // every message.
+  if(!anomalies.length) return;
+  const emptyState = anomalyLedger.querySelector('.ledger-empty');
+  if(emptyState) emptyState.remove();
+  anomalies.forEach(a=>{
+    totalAnomalies += 1;
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.innerHTML = `
+      <span>${a.global_id}</span>
+      <span class="swatch" style="background:var(--ember)"></span>
+      <span class="desc">${a.detail}</span>
+      <span class="arrow">⚠</span>
+      <span class="score">${a.kind}</span>
+    `;
+    anomalyLedger.insertBefore(row, anomalyLedger.firstChild);
+  });
+  while(anomalyLedger.children.length > 25){
+    anomalyLedger.removeChild(anomalyLedger.lastChild);
+  }
+  anomalyCount.textContent = `${totalAnomalies} flagged`;
+}
+
+// one orchestrated "identity thread" pulse when a fresh match lands
+function pulseThread(){
+  const stage = document.querySelector('.stage');
+  const beam = document.createElement('div');
+  beam.style.position = 'absolute';
+  beam.style.left = '50%';
+  beam.style.top = '50%';
+  beam.style.width = '2px';
+  beam.style.height = '2px';
+  beam.style.borderRadius = '50%';
+  beam.style.background = 'var(--brass)';
+  beam.style.boxShadow = '0 0 0 0 rgba(196,134,59,0.5)';
+  beam.style.transform = 'translate(-50%,-50%)';
+  beam.style.pointerEvents = 'none';
+  beam.style.transition = 'all 700ms cubic-bezier(.2,.8,.2,1)';
+  stage.appendChild(beam);
+  requestAnimationFrame(()=>{
+    beam.style.width = '340px';
+    beam.style.height = '340px';
+    beam.style.boxShadow = '0 0 40px 6px rgba(196,134,59,0)';
+    beam.style.background = 'transparent';
+    beam.style.border = '1px solid rgba(196,134,59,0.55)';
+  });
+  setTimeout(()=> beam.remove(), 750);
+}
+
+let seenMatchCount = 0;
+let socket;
+function connect(){
+  socket = new WebSocket(WS_URL);
+  socket.onopen = ()=> statusText.textContent = 'demo running';
+  socket.onclose = ()=>{ statusText.textContent = 'disconnected, retrying'; setTimeout(connect, 1500); };
+  socket.onerror = ()=>{ statusText.textContent = 'backend not reachable'; };
+  socket.onmessage = (evt)=>{
+    const data = JSON.parse(evt.data);
+    drawCamera(ctxA, camACanvas, data.floor_positions, CAM_A_RANGE);
+    drawCamera(ctxB, camBCanvas, data.floor_positions, CAM_B_RANGE);
+    drawHeatmap(data.heatmap);
+    footfallCount.textContent = `${data.footfall_events.toLocaleString()} events`;
+    const matches = data.reid.recent_matches;
+    if(matches.length > seenMatchCount){
+      pulseThread();
+    }
+    seenMatchCount = matches.length;
+    updateLedger(matches);
+    addAnomalyRows(data.anomalies || []);
+  };
+}
+connect();
+
+document.getElementById('resetBtn').addEventListener('click', async ()=>{
+  await fetch(REST_BASE + '/api/reset', {method:'POST'});
+  ledger.innerHTML = '<div class="ledger-empty">Resolution ledger: matches will appear here as people cross the handoff zone.</div>';
+  seenMatchCount = 0;
+  footfallCount.textContent = '0 events';
+  totalAnomalies = 0;
+  anomalyCount.textContent = '0 flagged';
+  anomalyLedger.innerHTML = '<div class="ledger-empty">No alerts yet: flags when a resolved identity stays in view continuously past the dwell threshold.</div>';
+});
+</script>
+</body>
+</html>
